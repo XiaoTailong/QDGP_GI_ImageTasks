@@ -56,8 +56,6 @@ if not os.path.exists('{}/images'.format(config['exp_path'])):
 if not os.path.exists('{}/images_sheet'.format(config['exp_path'])):
     os.makedirs('{}/images_sheet'.format(config['exp_path']))
 
-
-# 讨论trainable prior 在图片修复方面的能力, 主要是inplainting
 dgp_qp = DGP_qp(config)
 
 # prepare the target image
@@ -87,8 +85,8 @@ if config['dgp_mode'] == 'category_transfer':
         '%s/images_sheet/%s_categories.jpg' % (config['exp_path'], dgp_qp.img_name),
         nrow=int(save_imgs.size(0) ** 0.5),
         normalize=True)
-############# morphing 不做了
-elif config['dgp_mode'] == 'morphing':   # 比较耗时，因为需要另外新建2个模型。
+#############
+elif config['dgp_mode'] == 'morphing':   
     dgp_qp_2 = DGP_qp(config)
     dgp_qp_interp = DGP_qp(config)
 
