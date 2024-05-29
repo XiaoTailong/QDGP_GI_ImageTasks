@@ -3,7 +3,6 @@ from copy import deepcopy
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.distributed as dist
 import torch.nn.functional as F
 import torchvision
@@ -11,41 +10,14 @@ from PIL import Image
 from skimage import color
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from torch.autograd import Variable
-import math
+
 import models
-from models.QSampler import EnsembleQCBM, EnsembleQCBM_single
 import utils
 from models.downsampler_original import Downsampler
-import torchvision.transforms as transforms
+# import PIL
 
+class DGP_lr(object):
 
-class DGP_QP(nn.Module):
-    def __init__(self, config):
-        super(DGP_QP, self).__init__()
-
-        self.use_in = config['use_in']
-        # 64 * 64 image resolution
-        self.N_heads = config['n_heads']   # 6 heads
-        self.N_qubits = config['n_qubits']   # 20 qubits, measurement setting: d
-        self.N_layers = config['n_qlayers']
-        self.measurement_setting = config['measurement_setting']
-        ## quantum NN
-        if self.measurement_setting == 'd':
-            self.QNNPrior = EnsembleQCBM(self.N_heads, self.N_qubits, self.N_layers, self.measurement_setting)
-        elif self.measurement_setting == 's':
-            self.QNNPrior = EnsembleQCBM_single(self.N_heads, self.N_qubits, self.N_layers, self.measurement_setting)
-        # classical net
-        self.G = models.Generator(**config)
-
-    def forward(self, x, y, temperature):
-        qout = self.QNNPrior(x, temperature)
-
-        rec_image = self.G(qout, self.G.shared(y), use_in=self.use_in[0])
-
-        return rec_image
-
-
-class DGP_qp_lr(object):
     def __init__(self, config):
         self.rank, self.world_size = 0, 1
         if config['dist']:
@@ -61,48 +33,45 @@ class DGP_qp_lr(object):
         self.lr_ratio = config['lr_ratio']
         self.G_lrs = config['G_lrs']
         self.z_lrs = config['z_lrs']
+        self.k_lr = config['k_lr']
         self.use_in = config['use_in']
         self.select_num = config['select_num']
         self.factor = 2 if self.mode == 'hybrid' else 4  # Downsample factor
 
         # create model
-        self.model = DGP_QP(config).cuda()
+        self.G = models.Generator(**config).cuda()
         self.D = models.Discriminator(
             **config).cuda() if config['ftr_type'] == 'Discriminator' else None
-        self.model.G.optim = torch.optim.Adam(
-            [{'params': self.model.G.get_params(i, self.update_embed)}
-             for i in range(len(self.model.G.blocks) + 1)],
+        self.G.optim = torch.optim.Adam(
+            [{'params': self.G.get_params(i, self.update_embed)}
+                for i in range(len(self.G.blocks) + 1)],
             lr=config['G_lr'],
             betas=(config['G_B1'], config['G_B2']),
             weight_decay=0,
             eps=1e-8)
-
-        # self.z_optim = torch.optim.Adam(self.model.QNNPrior.parameters(), lr=self.z_lrs[0],
-        #                                 betas=(self.config['G_B1'], self.config['G_B2']),
-        #                                 weight_decay=0, eps=1e-8)
 
         # load weights
         if config['random_G']:
             self.random_G()
         else:
             utils.load_weights(
-                self.model.G if not (config['use_ema']) else None,
+                self.G if not (config['use_ema']) else None,
                 self.D,
                 config['weights_root'],
                 name_suffix=config['load_weights'],
-                G_ema=self.model.G if config['use_ema'] else None,
+                G_ema=self.G if config['use_ema'] else None,
                 strict=False)
 
-        self.model.G.eval()
+        self.G.eval()
         if self.D is not None:
             self.D.eval()
-        self.G_weight = deepcopy(self.model.G.state_dict())
+        self.G_weight = deepcopy(self.G.state_dict())
 
         # prepare latent variable and optimizer
         self._prepare_latent()
         # prepare learning rate scheduler
-        self.G_scheduler = utils.LRScheduler(self.model.G.optim, config['warm_up'])
-        # self.z_scheduler = utils.LRScheduler(self.z_optim, config['warm_up'])
+        self.G_scheduler = utils.LRScheduler(self.G.optim, config['warm_up'])
+        self.z_scheduler = utils.LRScheduler(self.z_optim, config['warm_up'])
 
         # loss functions
         self.mse = torch.nn.MSELoss()
@@ -123,21 +92,34 @@ class DGP_qp_lr(object):
             preserve_size=True).type(torch.cuda.FloatTensor)
 
     def _prepare_latent(self):
+        # 初始化一个z0
+        self.z_0 = torch.zeros((1, self.G.dim_z)).normal_().cuda()
+        self.z_0 = Variable(self.z_0, requires_grad=False)
 
+        # 初始化为全零
+        self.dz = torch.zeros(1, self.G.dim_z).cuda()
+        self.dz = Variable(self.dz, requires_grad=True)
+
+        # self.k_lr is the ratio of two learning rates from QDGP and DGP
+
+        self.z_optim = torch.optim.Adam(
+            [{'params': self.dz, 'lr': self.z_lrs[0]}],
+            betas=(self.config['G_B1'], self.config['G_B2']),
+            weight_decay=0,
+            eps=1e-8
+        )
         self.y = torch.zeros(1).long().cuda()
 
     def reset_G(self):
-        self.model.G.load_state_dict(self.G_weight, strict=False)
-        self.model.G.reset_in_init()
+        self.G.load_state_dict(self.G_weight, strict=False)
+        self.G.reset_in_init()
         if self.config['random_G']:
-            self.model.G.train()
+            self.G.train()
         else:
-            self.model.G.eval()
-
+            self.G.eval()
 
     def random_G(self):
-        self.model.G.init_weights()
-
+        self.G.init_weights()
 
     def set_target(self, target, category, img_path):
         self.target_origin = target
@@ -146,76 +128,66 @@ class DGP_qp_lr(object):
         self.y.fill_(category.item())
         self.img_name = img_path[img_path.rfind('/') + 1:img_path.rfind('.')]
 
-
     def run(self, save_interval=None):
         save_imgs = self.target.clone()
         save_imgs2 = save_imgs.cpu().clone()
         loss_dict = {}
         curr_step = 0
         count = 0
-        # inputs = torch.zeros(1, self.model.N_heads * self.model.N_qubits).cuda()
-        # random uniform as the noise
-        inputs = torch.rand((1, self.model.N_heads * self.model.N_qubits)) * 2 - 1
-        inputs = inputs.cuda()
-        # random class label for G
-        if self.config['class'] == -1:
-            self.y = torch.randint(0, self.config['n_classes'], [1]).long().cuda()
-        else:
-            self.y = torch.Tensor([self.config['class']]).long().cuda()
-        # may be random numbers or zeros
-
-        temperature = 1.0
+        latent_code_save = []
         for stage, iteration in enumerate(self.iterations):
-            # set up the number of features to use in discriminator
-            self.QNN_optim = torch.optim.Adam(
-                [{'params': self.model.QNNPrior.parameters(),
-                  'lr': self.config['z_lrs'][stage]}],
-                betas=(self.config['G_B1'], self.config['G_B2']),
-                weight_decay=0,
-                eps=1e-8
-            )
+            # setup the number of features to use in discriminator
             self.criterion.set_ftr_num(self.ftr_num[stage])
+
             for i in range(iteration):
-                # temperature = temperature - (temperature - 0.0001) / iteration * i
-                temperature = 0.0001 + (1 - 0.0001) * math.exp(-1. * i / 0.5)
                 curr_step += 1
                 # setup learning rate
                 self.G_scheduler.update(curr_step, self.G_lrs[stage],
                                         self.ft_num[stage], self.lr_ratio[stage])
-                # self.z_scheduler.update(curr_step, self.z_lrs[stage])
-                self.QNN_optim.zero_grad()
-                if self.update_G:
-                    self.model.G.optim.zero_grad()
+                self.z_scheduler.update(curr_step, self.z_lrs[stage])
 
-                x = self.model(inputs, self.y, temperature)  # G output
+                self.z_optim.zero_grad()
+                if self.update_G:
+                    self.G.optim.zero_grad()
+
+                # here calculate the latent code with different learning rate_ratios
+                z = self.z_0 + self.k_lr * self.dz
+
+                x = self.G(z, self.G.shared(self.y), use_in=self.use_in[stage])
                 # apply degradation transform
                 x_map = self.pre_process(x, False)
+
+                z_save = z.clone()
+                latent_code_save.append(z_save.detach().cpu().numpy())
 
                 # calculate losses in the degradation space
                 ftr_loss = self.criterion(self.ftr_net, x_map, self.target)
                 mse_loss = self.mse(x_map, self.target)
                 # nll corresponds to a negative log-likelihood loss
-                # nll = self.z**2 / 2
-                # nll = nll.mean()
+                nll = z**2 / 2
+                nll = nll.mean()
                 l1_loss = F.l1_loss(x_map, self.target)
-                loss = (ftr_loss * self.config['w_D_loss'][stage] +
-                        mse_loss * self.config['w_mse'][stage]
-                        # + nll * self.config['w_nll']
-                        )
+                loss = ftr_loss * self.config['w_D_loss'][stage] + \
+                    mse_loss * self.config['w_mse'][stage] + \
+                    nll * self.config['w_nll']
+
                 loss.backward()
 
-                self.QNN_optim.step()
+                self.z_optim.step()
+
                 if self.update_G:
-                    self.model.G.optim.step()
+                    self.G.optim.step()
+
 
                 # These losses are calculated in the [-1,1] image scale
                 # We record the rescaled MSE and L1 loss, corresponding to [0,1] image scale
                 loss_dict = {
                     'ftr_loss': ftr_loss,
-                    # 'nll': nll,
+                    'nll': nll,
                     'mse_loss': mse_loss / 4,
                     'l1_loss': l1_loss / 2
                 }
+
                 # calculate losses in the non-degradation space
                 if self.mode in ['reconstruct', 'colorization', 'SR', 'inpainting']:
                     # x2 is to get the post-processed result in colorization
@@ -233,17 +205,17 @@ class DGP_qp_lr(object):
                     save_imgs = torch.cat((save_imgs, x), dim=0)
                     torchvision.utils.save_image(
                         save_imgs.float(),
-                        '%s/images_sheet/%s_%s.jpg' %
+                        '%s/images_sheet/%s_c_%s.jpg' %
                         (self.config['exp_path'], self.img_name, self.mode),
-                        nrow=int(save_imgs.size(0) ** 0.5),
+                        nrow=int(save_imgs.size(0)**0.5),
                         normalize=True)
                     if self.mode == 'colorization':
                         save_imgs2 = torch.cat((save_imgs2, x2), dim=0)
                         torchvision.utils.save_image(
                             save_imgs2.float(),
-                            '%s/images_sheet/%s_%s_2.jpg' %
+                            '%s/images_sheet/%s_c_%s_2.jpg' %
                             (self.config['exp_path'], self.img_name, self.mode),
-                            nrow=int(save_imgs.size(0) ** 0.5),
+                            nrow=int(save_imgs.size(0)**0.5),
                             normalize=True)
 
                 if save_interval is not None:
@@ -262,66 +234,70 @@ class DGP_qp_lr(object):
                 ) < self.config['stop_ftr']:
                     break
 
+        # 保存一次， np.norm(self.z) 表明这个数据的尺度
+        latent_code_save = np.concatenate(latent_code_save, axis=0)
+        np.save("./save_data_latent_code/{}_DGP_z_k_{}.npy".format(self.img_name, self.k_lr),
+                latent_code_save)
+
         # save images
         utils.save_img(
-            self.target[0], '%s/images/%s_%s_target.png' %
-                            (self.config['exp_path'], self.img_name, self.mode))
+            self.target[0], '%s/images/%s_%s_%f_c_target.png' %
+            (self.config['exp_path'], self.img_name, self.mode, self.k_lr))
         utils.save_img(
             self.target_origin[0],
-            '%s/images/%s_%s_target_origin.png' %
-            (self.config['exp_path'], self.img_name, self.mode))
+            '%s/images/%s_%s_%f_target_c_origin.png' %
+            (self.config['exp_path'], self.img_name, self.mode, self.k_lr))
         utils.save_img(
-            x[0], '%s/images/%s_%s.png' %
-                  (self.config['exp_path'], self.img_name, self.mode))
+            x[0], '%s/images/%s_%s_%f_c.png' %
+            (self.config['exp_path'], self.img_name, self.mode, self.k_lr))
         if self.mode == 'colorization':
             utils.save_img(
-                x2[0], '%s/images/%s_%s2.png' %
-                       (self.config['exp_path'], self.img_name, self.mode))
+                x2[0], '%s/images/%s_%s2_%f_c.png' %
+                (self.config['exp_path'], self.img_name, self.mode, self.k_lr))
 
         if self.mode == 'jitter':
             # conduct random jittering
             self.jitter(x)
         if self.config['save_G']:
             torch.save(
-                self.model.G.state_dict(), '%s/G_%s_%s.pth' %
-                                           (self.config['exp_path'], self.img_name, self.mode))
-            # torch.save(
-            #     self.z, '%s/z_%s_%s.pth' %
-            #     (self.config['exp_path'], self.img_name, self.mode))
+                self.G.state_dict(), '%s/G_%s_%s.pth' %
+                (self.config['exp_path'], self.img_name, self.mode))
+            torch.save(
+                z, '%s/z_%s_%s.pth' %
+                (self.config['exp_path'], self.img_name, self.mode))
         return loss_dict
 
-    # def select_z(self, select_y=False):
-    #     # no prior information thus needing the select_z process before training the Network
-    #     with torch.no_grad():
-    #         if self.select_num == 0:
-    #             self.z.zero_()
-    #             return
-    #         elif self.select_num == 1:
-    #             self.z.normal_()
-    #             return
-    #         z_all, y_all, loss_all = [], [], []
-    #         if self.rank == 0:
-    #             print('Selecting z from {} samples'.format(self.select_num))
-    #         # only use last 3 discriminator features to compare
-    #         self.criterion.set_ftr_num(3)
-    #         for i in range(self.select_num):
-    #             self.z.normal_(mean=0, std=self.config['sample_std'])
-    #             z_all.append(self.z.cpu())
-    #             if select_y:
-    #                 self.y.random_(0, self.config['n_classes'])
-    #                 y_all.append(self.y.cpu())
-    #             x = self.G(self.z, self.G.shared(self.y))
-    #             x = self.pre_process(x)
-    #             ftr_loss = self.criterion(self.ftr_net, x, self.target)
-    #             loss_all.append(ftr_loss.view(1).cpu())
-    #             if self.rank == 0 and (i + 1) % 100 == 0:
-    #                 print('Generating {}th sample'.format(i + 1))
-    #         loss_all = torch.cat(loss_all)
-    #         idx = torch.argmin(loss_all)
-    #         self.z.copy_(z_all[idx])
-    #         if select_y:
-    #             self.y.copy_(y_all[idx])
-    #         self.criterion.set_ftr_num(self.ftr_num[0])
+    def select_z(self, select_y=False):
+        with torch.no_grad():
+            if self.select_num == 0:
+                self.z_0.zero_()
+                return
+            elif self.select_num == 1:
+                self.z_0.normal_()
+                return
+            z_all, y_all, loss_all = [], [], []
+            if self.rank == 0:
+                print('Selecting z from {} samples'.format(self.select_num))
+            # only use last 3 discriminator features to compare
+            self.criterion.set_ftr_num(3)
+            for i in range(self.select_num):
+                self.z_0.normal_(mean=0, std=self.config['sample_std'])
+                z_all.append(self.z_0.cpu())
+                if select_y:
+                    self.y.random_(0, self.config['n_classes'])
+                    y_all.append(self.y.cpu())
+                x = self.G(self.z_0, self.G.shared(self.y))
+                x = self.pre_process(x)
+                ftr_loss = self.criterion(self.ftr_net, x, self.target)
+                loss_all.append(ftr_loss.view(1).cpu())
+                if self.rank == 0 and (i + 1) % 100 == 0:
+                    print('Generating {}th sample'.format(i + 1))
+            loss_all = torch.cat(loss_all)
+            idx = torch.argmin(loss_all)
+            self.z_0.copy_(z_all[idx])
+            if select_y:
+                self.y.copy_(y_all[idx])
+            self.criterion.set_ftr_num(self.ftr_num[0])
 
     def pre_process(self, image, target=True):
         if self.mode in ['SR', 'hybrid']:
@@ -386,7 +362,7 @@ class DGP_qp_lr(object):
                 # only use the inpainted area to calculate ssim and psnr
                 x_np = x_np[self.begin:self.end, self.begin:self.end, :]
                 target_np = target_np[self.begin:self.end,
-                            self.begin:self.end, :]
+                                      self.begin:self.end, :]
             ssim = structural_similarity(target_np, x_np, multichannel=True)
             psnr = peak_signal_noise_ratio(target_np, x_np)
             metrics['psnr'] = torch.Tensor([psnr]).cuda()
@@ -416,5 +392,5 @@ class DGP_qp_lr(object):
             save_imgs.float(),
             '%s/images_sheet/%s_jitters.jpg' %
             (self.config['exp_path'], self.img_name),
-            nrow=int(save_imgs.size(0) ** 0.5),
+            nrow=int(save_imgs.size(0)**0.5),
             normalize=True)
