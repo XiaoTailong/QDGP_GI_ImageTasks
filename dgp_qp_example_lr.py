@@ -26,6 +26,10 @@ def add_example_parser(parser):
         '--class2', type=int, default=-1,
         help='class index of the 2nd image, used in "morphing" mode (default: %(default)s)')
 
+    parser.add_argument(
+        '--k_lr', type=float, default=1,
+        help='learning rate ratios (sensitivity amplification) (default: %(default)s)')
+    
     parser.add_argument('--n_qubits', type=int, default=20, help='number of qubits')
     parser.add_argument('--n_qlayers', type=int, default=3, help='number of layers')
     parser.add_argument('--n_heads', type=int, default=6, help='number of heads')

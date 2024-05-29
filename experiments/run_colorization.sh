@@ -30,7 +30,7 @@ source activate tf_tc
 IMAGE_PATH="/data/ILSVRC2012_val_00044065.JPEG"
 CLASS="425"
 
-python example.py \
+python example_lr.py \
 --image_path $IMAGE_PATH \
 --class $CLASS \
 --seed 0 \
@@ -53,5 +53,6 @@ python example.py \
 --load_weights 256 \
 --G_ch 96 --D_ch 96 \
 --G_shared \
+--k_lr 1 \
 --hier --dim_z 120 --shared_dim 128 \
 --skip_init --use_ema
