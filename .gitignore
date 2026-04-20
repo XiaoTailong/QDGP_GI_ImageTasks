@@ -8,3 +8,13 @@ logs*
 event*
 *.npy
 *.pth
+
+pretrained/*.pth
+pretrained/*.bin
+results/
+__pycache__/
+*.log
+.vscode/
+
+#所有以 test_ 开头的临时脚本都不会被 Git 追踪到了
+test_*.py

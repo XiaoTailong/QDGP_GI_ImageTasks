@@ -44,7 +44,7 @@ class DGP_QP(nn.Module):
 
         return rec_image
 
-class DGP_qp_0001(object):
+class DGP_qp_001(object):
     def __init__(self, config):
         self.rank, self.world_size = 0, 1
         if config['dist']:

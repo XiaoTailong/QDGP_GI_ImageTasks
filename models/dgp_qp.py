@@ -14,7 +14,7 @@ from torch.autograd import Variable
 import math
 import models
 from models.QSampler import EnsembleQCBM, EnsembleQCBM_single
-from models.QSampler import EnsembleQCBM_0001, EnsembleQCBM_single_0001
+from models.QSampler import EnsembleQCBM_001, EnsembleQCBM_single_001
 import utils
 from models.downsampler_original import Downsampler
 import torchvision.transforms as transforms

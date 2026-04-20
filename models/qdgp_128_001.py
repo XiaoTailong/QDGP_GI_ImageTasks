@@ -60,7 +60,7 @@ class QDGP_hybrid(nn.Module):
         return rec_image, qout
 
 
-class QDGP_0001(object):
+class QDGP_001(object):
     def __init__(self, config):
         # self.target_bucket = None
         self.rank, self.world_size = 0, 1

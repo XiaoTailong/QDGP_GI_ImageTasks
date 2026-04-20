@@ -60,7 +60,7 @@ class QDGP_hybrid(nn.Module):
         return rec_image, qout
 
 
-class QDGP_64_0001(object):
+class QDGP_64_001(object):
     def __init__(self, config):
         # self.target_bucket = None
         self.rank, self.world_size = 0, 1
@@ -224,20 +224,20 @@ class QDGP_64_0001(object):
                             ['Cost: {:+.8f}'.format(end - start)]
                         ), flush=True)
                         if self.config['random_G']:
-                            np.save("./experiments/data_recon/{}/QDGP0001_noise_mode{}_recons_dim{}_iter{}.npy"
+                            np.save("./experiments/data_recon/{}/QDGP001_noise_mode{}_recons_dim{}_iter{}.npy"
                                     .format(self.object, self.model.measurement_setting, self.dim, curr_step),
                                     np.array(loss_list))
                             self.to_img(rec_image.squeeze().detach().cpu().numpy(), curr_step, True)
-                            np.save("./experiments/data_recon/{}/QDGP0001_noise_mode{}_prior_dim{}_iter{}.npy".format(
+                            np.save("./experiments/data_recon/{}/QDGP001_noise_mode{}_prior_dim{}_iter{}.npy".format(
                                 self.object, self.model.measurement_setting, self.dim, curr_step),
                                     qout.detach().cpu().numpy())
 
                         else:
-                            np.save("./experiments/data_recon/{}/QDGP0001_noise_pretrain_mode{}_recons_dim{}_iter{}.npy"
+                            np.save("./experiments/data_recon/{}/QDGP001_noise_pretrain_mode{}_recons_dim{}_iter{}.npy"
                                     .format(self.object, self.model.measurement_setting, self.dim,
                                             curr_step, False),
                                     np.array(loss_list))
-                            np.save("./experiments/data_recon/{}/QDGP0001_noise_pretrain_mode{}_prior_dim{}_iter{}.npy".format(
+                            np.save("./experiments/data_recon/{}/QDGP001_noise_pretrain_mode{}_prior_dim{}_iter{}.npy".format(
                                 self.object, self.model.measurement_setting, self.dim, curr_step),
                                 qout.detach().cpu().numpy())
                             self.to_img(rec_image.squeeze().detach().cpu().numpy(), curr_step, False)
@@ -251,13 +251,13 @@ class QDGP_64_0001(object):
         im = Image.fromarray(images)
         im = im.convert("L")
         if random_G:
-            im.save("./experiments/data_recon/{}/QDGP0001_noise_mode{}_recons_dim{}_iter{}.jpeg"
+            im.save("./experiments/data_recon/{}/QDGP001_noise_mode{}_recons_dim{}_iter{}.jpeg"
                     .format(self.object,
                    self.model.measurement_setting,
                    self.dim,
                    iterations))
         else:
-            im.save("./experiments/data_recon/{}/QDGP0001_noise_pretrain_mode{}_recons_dim{}_iter{}.jpeg"
+            im.save("./experiments/data_recon/{}/QDGP001_noise_pretrain_mode{}_recons_dim{}_iter{}.jpeg"
                     .format(self.object,
                             self.model.measurement_setting,
                             self.dim,

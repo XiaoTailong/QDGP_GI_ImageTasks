@@ -6,7 +6,8 @@ import torch.nn as nn
 import tensorflow as tf
 import tensorcircuit as tc
 
-from models.model import quantum_circuit_fixing, quantum_circuit_Noise, quantum_circuit_Noise_001
+#修改幽灵引用from models.model import quantum_circuit_fixing, quantum_circuit_Noise, quantum_circuit_Noise_001
+from models.model import quantum_circuit_fixing, quantum_circuit_Noise_001
 # with tensorflow backend and pytorch interface
 K = tc.set_backend("tensorflow")
 
@@ -26,7 +27,7 @@ class QCBMPrior(nn.Module):
         self.nlayers = nlayers
         self.measurement_setting = measurement_setting
         # if measurement_setting == 'o':
-        qpred_vmap = K.vmap(quantum_circuit_Noise, vectorized_argnums=0)
+        qpred_vmap = K.vmap(quantum_circuit_Noise_001, vectorized_argnums=0)
         self.params = torch.nn.Parameter(0.1 * torch.randn([nlayers, nqubits, 4]))
         self.q_weights_final = torch.nn.Parameter(0.1 * torch.randn([nqubits, 3]))
         # self.q_weights_basis = torch.nn.Parameter(0.1 * torch.randn([nqubits, ]))
@@ -219,9 +220,9 @@ class EnsembleQCBM_single(nn.Module):
             return latent_samples
 
 
-class EnsembleQCBM_0001(nn.Module):
+class EnsembleQCBM_001(nn.Module):
     def __init__(self, N_heads, nqubits, nlayers, measurement_setting=None):
-        super(EnsembleQCBM_0001, self).__init__()
+        super(EnsembleQCBM_001, self).__init__()
         self.Neads = N_heads
         self.nqubits = nqubits
         self.nlayers = nlayers
@@ -254,9 +255,9 @@ class EnsembleQCBM_0001(nn.Module):
             return latent_samples
 
 
-class EnsembleQCBM_single_0001(nn.Module):
+class EnsembleQCBM_single_001(nn.Module):
     def __init__(self, N_heads, nqubits, nlayers, measurement_setting=None):
-        super(EnsembleQCBM_single_0001, self).__init__()
+        super(EnsembleQCBM_single_001, self).__init__()
         self.Neads = N_heads
         self.nqubits = nqubits
         self.nlayers = nlayers

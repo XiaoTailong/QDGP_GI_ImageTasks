@@ -7,7 +7,7 @@ import torch
 import torchvision.utils as vutils
 
 import utils
-from models import DGP_qp, DGP_qp_0001
+from models import DGP_qp, DGP_qp_001
 
 sys.path.append("./")
 
@@ -58,7 +58,7 @@ if not os.path.exists('{}/images_sheet'.format(config['exp_path'])):
 
 
 # 讨论trainable prior 在图片修复方面的能力, 主要是inplainting
-dgp_qp = DGP_qp_0001(config)
+dgp_qp = DGP_qp_001(config)
 
 # prepare the target image
 img = utils.get_img(config['image_path'], config['resolution']).cuda()

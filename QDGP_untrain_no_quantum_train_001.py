@@ -14,7 +14,7 @@ import torchvision.utils as vutils
 
 
 import utils
-from models import QDGP_64_0001
+from models import QDGP_64_001
 # from torchsummary import summary
 
 sys.path.append("./")
@@ -173,7 +173,7 @@ def test_code(orignal_image, patterns, data_array):
 #
 # test_code(orignal, patterns, bucket_target)
 # initialize DGP model
-qdgp = QDGP_64_0001(config)
+qdgp = QDGP_64_001(config)
 
 # qdgp.set_target(bucket_target, category)
 # we need to ensure the shapes of the tensor
